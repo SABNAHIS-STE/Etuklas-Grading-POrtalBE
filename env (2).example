@@ -1,0 +1,11 @@
+PORT=3001
+
+# Get a free key at https://console.mistral.ai
+MISTRAL_API_KEY=
+
+# platform.openai.com/api-keys \u2014 note this one is NOT free (has a small
+# trial credit for new accounts, then paid). See README for the implication.
+OPENAI_API_KEY=
+
+# Get a free key at console.groq.com
+GROQ_API_KEY=
