@@ -7,7 +7,7 @@
  * problem, which happens when a model is asked for a bare score with no
  * calibration anchors \u2014 it defaults to a polite, non-committal number.
  *
- * Provider chain: Mistral (primary) \u2192 OpenAI (fallback) \u2192 Groq (fallback).
+ * Provider chain: Mistral (primary) \u2192 Gemini (fallback) \u2192 Groq (fallback).
  *
  * The fix here is prompt structure, not a smarter model:
  *   1. The model must write out reasoning for EACH rubric dimension first.
@@ -36,7 +36,7 @@ app.use(express.json({ limit: '2mb' }));
 
 const PORT = process.env.PORT || 3001;
 const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY;
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
 // ---------------------------------------------------------------------------
@@ -157,25 +157,23 @@ async function callMistral(prompt) {
   return text;
 }
 
-async function callOpenAI(prompt) {
-  if (!OPENAI_API_KEY) throw new Error('OPENAI_API_KEY not configured');
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${OPENAI_API_KEY}`
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.3,
-      max_tokens: 2000
-    })
-  });
-  if (!res.ok) throw new Error(`OpenAI HTTP ${res.status}: ${await res.text()}`);
+async function callGemini(prompt) {
+  if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY not configured');
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.3, maxOutputTokens: 2000 }
+      })
+    }
+  );
+  if (!res.ok) throw new Error(`Gemini HTTP ${res.status}: ${await res.text()}`);
   const data = await res.json();
-  const text = data?.choices?.[0]?.message?.content;
-  if (!text) throw new Error('OpenAI returned no text');
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error('Gemini returned no text');
   return text;
 }
 
@@ -215,12 +213,12 @@ app.post('/grade', async (req, res) => {
     rawText = await callMistral(prompt);
     source = 'mistral';
   } catch (mistralErr) {
-    console.error('Mistral failed, falling back to OpenAI:', mistralErr.message);
+    console.error('Mistral failed, falling back to Gemini:', mistralErr.message);
     try {
-      rawText = await callOpenAI(prompt);
-      source = 'openai';
-    } catch (openaiErr) {
-      console.error('OpenAI failed, falling back to Groq:', openaiErr.message);
+      rawText = await callGemini(prompt);
+      source = 'gemini';
+    } catch (geminiErr) {
+      console.error('Gemini failed, falling back to Groq:', geminiErr.message);
       try {
         rawText = await callGroq(prompt);
         source = 'groq';
